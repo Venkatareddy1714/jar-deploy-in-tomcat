@@ -1,0 +1,40 @@
+pipeline {
+    agent any
+
+    environment {
+        TOMCAT_URL = 'http://YOUR_TOMCAT_SERVER_IP:8080'  // Replace with your Tomcat IP
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git 'https://github.com/Venkatareddy1714/boxfuse-sample-java-war-hello1.git'
+            }
+        }
+
+        stage('Build & Package') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Deploy to Tomcat') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'TOMCAT_CREDENTIALS_ID', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
+                    script {
+                        def warFile = sh(script: "find target -name '*.war' | head -n 1", returnStdout: true).trim()
+                        if (warFile) {
+                            echo "Deploying WAR file: ${warFile}"
+                            sh """
+                            curl -v -u ${TOMCAT_USER}:${TOMCAT_PASS} --upload-file ${warFile} \
+                            ${TOMCAT_URL}/manager/text/deploy?path=/helloapp&update=true
+                            """
+                        } else {
+                            error "WAR file not found. Deployment aborted."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
