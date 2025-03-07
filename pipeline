@@ -1,59 +1,62 @@
 pipeline {
     agent any
-
+ 
     environment {
-        TOMCAT_SERVER = "13.233.81.130"
-        TOMCAT_PORT = "9000"
-        TOMCAT_USER = "ubuntu"
-        TOMCAT_DIR = "/opt/tomcat/webapps"
-        JAR_FILE_NAME = "helloworld.jar"
-        GITHUB_REPO = "Venkatareddy1714/helloworld"
-        GITHUB_BRANCH = "master"
+        TOMCAT_SERVER = "13.201.6.205:9000"  // Replace with your Tomcat server hostname
+        TOMCAT_USER = "ubuntu"  // Replace with your SSH user for Tomcat server
+        TOMCAT_DIR = "/home/ubuntu/tomcat/webapps"  // Path to the Tomcat webapps folder (adjust if needed)
+        JAR_FILE_NAME = "helloworld.jar"  // Replace with the name of your JAR file in GitHub
+        GITHUB_REPO = "https://github.com/Venkatareddy1714/helloworld.git"  // Replace with your GitHub repo URL
+        GITHUB_BRANCH = "master"  // Since the repository is using master branch
+        GITHUB_TOKEN = "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"  // GitHub token to authenticate API calls (store securely in Jenkins credentials)
     }
-
+ 
     stages {
         stage('Clone GitHub Repository') {
             steps {
                 script {
                     echo "Cloning the GitHub repository..."
-                    sh 'rm -rf helloworld'
-                    sh 'git clone --branch ${GITHUB_BRANCH} --single-branch https://github.com/${GITHUB_REPO}.git'
+                    sh """
+                    rm -rf helloworld
+                    git clone ${GITHUB_REPO} --branch ${GITHUB_BRANCH} --single-branch
+                    cd \$(basename ${GITHUB_REPO} .git)
+                    """
                 }
             }
         }
-
+ 
         stage('Fetch JAR from GitHub') {
             steps {
-                withCredentials([string(credentialsId: 'GITHUB_TOKEN_ID', variable: 'GITHUB_TOKEN')]) {
-                    dir('helloworld') {
-                        script {
-                            echo "Fetching JAR file from GitHub..."
-                            sh '''
-                                curl -L -H "Authorization: token ${GITHUB_TOKEN}" \
-                                    -o ${JAR_FILE_NAME} \
-                                    "https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/${JAR_FILE_NAME}"
-                            '''
-                        }
-                    }
+                script {
+                    echo "Fetching JAR file from GitHub..."
+                    sh """
+                    curl -L -H "Authorization: token ${GITHUB_TOKEN}" \
+                    -o ${JAR_FILE_NAME} \
+                    "https://github.com/${GITHUB_REPO}/raw/${GITHUB_BRANCH}/path/to/${JAR_FILE_NAME}"
+                    """
                 }
             }
         }
-
-        stage('Deploy to Tomcat') {
+ 
+        stage('Deploy') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'SSH_CREDENTIALS_ID', keyFileVariable: 'SSH_KEY')]) {
-                    script {
-                        echo "Deploying JAR file to Tomcat server..."
-                        sh '''
-                            mkdir -p /var/lib/jenkins/.ssh
-                            echo "Host *" > /var/lib/jenkins/.ssh/config
-                            echo "  StrictHostKeyChecking no" >> /var/lib/jenkins/.ssh/config
-                            echo "  UserKnownHostsFile=/dev/null" >> /var/lib/jenkins/.ssh/config
-
-                            scp -o StrictHostKeyChecking=no -i ${SSH_KEY} helloworld/${JAR_FILE_NAME} ${TOMCAT_USER}@${TOMCAT_SERVER}:${TOMCAT_DIR}/
-                            ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ${TOMCAT_USER}@${TOMCAT_SERVER} "sudo chown tomcat:tomcat ${TOMCAT_DIR}/${JAR_FILE_NAME}"
-                            ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ${TOMCAT_USER}@${TOMCAT_SERVER} "sudo systemctl restart tomcat"
-                        '''
+                script {
+                    echo "Deploying JAR file to Tomcat server..."
+                    // Ensure .ssh directory exists for Jenkins user
+                    sh """
+                    mkdir -p /var/lib/jenkins/.ssh
+                    # Disable host key checking temporarily
+                    echo "Host *" > /var/lib/jenkins/.ssh/config
+                    echo "  StrictHostKeyChecking no" >> /var/lib/jenkins/.ssh/config
+                    echo "  UserKnownHostsFile=/dev/null" >> /var/lib/jenkins/.ssh/config
+                    """
+                    // Use the SSH private key for authentication
+                    withCredentials([sshUserPrivateKey(credentialsId: 'db8cb2e0-1b77-42d5-9245-1dda682f75c4', keyFileVariable: 'SSH_KEY')]) {
+                        sh """
+                        scp -o StrictHostKeyChecking=no -i ${SSH_KEY} helloworld.jar ubuntu@13.201.6.205:/home/ubuntu/tomcat/webapps
+                        ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@13.201.6.205 "sudo /home/ubuntu/tomcat/bin/shutdown.sh"
+                        ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@13.201.6.205 "sudo /home/ubuntu/tomcat/bin/startup.sh"
+                        """
                     }
                 }
             }
