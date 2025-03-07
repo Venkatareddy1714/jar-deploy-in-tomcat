@@ -2,36 +2,58 @@ pipeline {
     agent any
 
     environment {
-        TOMCAT_URL = 'http://YOUR_TOMCAT_SERVER_IP:8080'  // Replace with your Tomcat IP
+        TOMCAT_SERVER = "13.233.81.130"
+        TOMCAT_PORT = "9000"
+        TOMCAT_USER = "ubuntu"
+        TOMCAT_DIR = "/opt/tomcat/webapps"
+        JAR_FILE_NAME = "helloworld.jar"
+        GITHUB_REPO = "Venkatareddy1714/helloworld"
+        GITHUB_BRANCH = "master"
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Clone GitHub Repository') {
             steps {
-                git 'https://github.com/Venkatareddy1714/boxfuse-sample-java-war-hello1.git'
+                script {
+                    echo "Cloning the GitHub repository..."
+                    sh 'rm -rf helloworld'
+                    sh 'git clone --branch ${GITHUB_BRANCH} --single-branch https://github.com/${GITHUB_REPO}.git'
+                }
             }
         }
 
-        stage('Build & Package') {
+        stage('Fetch JAR from GitHub') {
             steps {
-                sh 'mvn clean package'
+                withCredentials([string(credentialsId: 'GITHUB_TOKEN_ID', variable: 'GITHUB_TOKEN')]) {
+                    dir('helloworld') {
+                        script {
+                            echo "Fetching JAR file from GitHub..."
+                            sh '''
+                                curl -L -H "Authorization: token ${GITHUB_TOKEN}" \
+                                    -o ${JAR_FILE_NAME} \
+                                    "https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/${JAR_FILE_NAME}"
+                            '''
+                        }
+                    }
+                }
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'TOMCAT_CREDENTIALS_ID', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
+                withCredentials([sshUserPrivateKey(credentialsId: 'SSH_CREDENTIALS_ID', keyFileVariable: 'SSH_KEY')]) {
                     script {
-                        def warFile = sh(script: "find target -name '*.war' | head -n 1", returnStdout: true).trim()
-                        if (warFile) {
-                            echo "Deploying WAR file: ${warFile}"
-                            sh """
-                            curl -v -u ${TOMCAT_USER}:${TOMCAT_PASS} --upload-file ${warFile} \
-                            ${TOMCAT_URL}/manager/text/deploy?path=/helloapp&update=true
-                            """
-                        } else {
-                            error "WAR file not found. Deployment aborted."
-                        }
+                        echo "Deploying JAR file to Tomcat server..."
+                        sh '''
+                            mkdir -p /var/lib/jenkins/.ssh
+                            echo "Host *" > /var/lib/jenkins/.ssh/config
+                            echo "  StrictHostKeyChecking no" >> /var/lib/jenkins/.ssh/config
+                            echo "  UserKnownHostsFile=/dev/null" >> /var/lib/jenkins/.ssh/config
+
+                            scp -o StrictHostKeyChecking=no -i ${SSH_KEY} helloworld/${JAR_FILE_NAME} ${TOMCAT_USER}@${TOMCAT_SERVER}:${TOMCAT_DIR}/
+                            ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ${TOMCAT_USER}@${TOMCAT_SERVER} "sudo chown tomcat:tomcat ${TOMCAT_DIR}/${JAR_FILE_NAME}"
+                            ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ${TOMCAT_USER}@${TOMCAT_SERVER} "sudo systemctl restart tomcat"
+                        '''
                     }
                 }
             }
