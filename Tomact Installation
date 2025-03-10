@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Variables
+TOMCAT_VERSION=9.0.100
+TOMCAT_URL=wget "https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.100/bin/apache-tomcat-9.0.100.tar.gz"
+INSTALL_DIR="/opt/tomcat"
+
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install required packages
+sudo apt install -y vim wget
+
+# Download and extract Tomcat
+cd /opt
+sudo wget $TOMCAT_URL
+sudo tar -xvzf apache-tomcat-${TOMCAT_VERSION}.tar.gz
+sudo mv apache-tomcat-${TOMCAT_VERSION} tomcat
+
+# Modify context.xml to allow access to the Manager App
+sudo sed -i '/<Valve className="org.apache.catalina.valves.RemoteAddrValve"/d' $INSTALL_DIR/webapps/manager/META-INF/context.xml
+sudo sed -i '/allow=/d' $INSTALL_DIR/webapps/manager/META-INF/context.xml
+
+# Configure Tomcat users
+sudo bash -c "cat >> $INSTALL_DIR/conf/tomcat-users.xml <<EOL
+<role rolename=\"manager-gui\"/>
+<role rolename=\"manager-script\"/>
+<user username=\"tomcat\" password=\"tomcat123\" roles=\"manager-gui, manager-script\"/>
+EOL"
+
+# Change Tomcat port from 8080 to 9000
+sudo sed -i 's/port="8080"/port="9000"/' $INSTALL_DIR/conf/server.xml
+
+# Start Tomcat
+sudo chmod +x $INSTALL_DIR/bin/*.sh
+sudo $INSTALL_DIR/bin/startup.sh
+
+# Display login info
+echo "Tomcat installation completed!"
+echo "Access the manager app at: http://<your-public-ip>:9000/manager"
+echo "Username: tomcat"
+echo "Password: tomcat123"
